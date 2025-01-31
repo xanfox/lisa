@@ -6,7 +6,7 @@ import pyautogui
 import pyperclip
 import traceback
 import undetected_chromedriver as uc
-
+from selenium.webdriver.chrome.options import Options
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -231,11 +231,49 @@ class WhatsCliker:
                         try:
                             title_element = chat.find_element(By.XPATH, './/span[@title]')
                             title = title_element.get_attribute("title")
+                            print(f"### | TENTANDO:{title}")
                             if title and title in target_chats and title not in found_chats and title not in exclusion_zone:
                                 
                                 chat_toclick = self.driver.find_element(By.XPATH, f'//*[@title="{title}"]')
                                 chat_toclick.click()
                                 
+                                
+                                ###############################################################
+                                ################## | VAMOS APAGAR OS CHATS ANTES |############# 
+                                ###############################################################
+                                # localizar botões mais opções
+
+
+
+                                # Clicar
+
+                                try:
+                                    WebDriverWait(self.driver, 10).until(
+                                        EC.element_to_be_clickable((By.XPATH, '//div[@id="main"]//button[@aria-label="Mais opções" and @title="Mais opções"]'))
+                                    ).click()
+                                    print("*** Clicou no Botão mais Opções com Sucesso!***")
+                                except Exception as e:
+                                    print(f"Erro ao clicar no botão mais opções: {e}")
+
+                                try:
+                                    WebDriverWait(self.driver, 10).until(
+                                        EC.element_to_be_clickable((By.XPATH, '//div[@aria-label="Limpar conversa" and text()="Limpar conversa"]'))
+                                    ).click()
+                                    print("+++ Clicou no Botão Limpar Conversa +++")
+                                except Exception as e:
+                                    print(f"Erro ao clicar no botão limpar conversa: {e}")
+
+                                try:
+                                    WebDriverWait(self.driver, 10).until(
+                                        EC.element_to_be_clickable((By.XPATH, '//button[.//div[contains(text(), "Limpar conversa")]]'))
+                                    ).click()
+                                    print("$$$ Clicou no Botão Limpar Conversa interno $$$")
+                                except Exception as e:
+                                    print(f"Erro ao clicar no botão limpar conversa interno, mensagens não apagadas: {e}")
+
+
+
+                                time.sleep(3)
                                 ######################### | BIG MOMENT | ###########################################
                                                 # Seleção de arquivo aleatório e envio de mensagem
                                 try:
@@ -262,7 +300,7 @@ class WhatsCliker:
 
                     
                                 
-                                delay = random.uniform(15, 47)
+                                delay = random.uniform(9, 35)
                                 print(f"Aguardando {delay:.2f} segundos antes do próximo clique.")  # Log do delay
                                 time.sleep(delay)  # Pausa antes do clique
                                 
@@ -343,63 +381,31 @@ class WhatsCliker:
             print(f"Erro ao clicar no botão de anexar: {e}")
 
 
-    def click_photo_attach_button(self):
-        """Clica no botão de anexar foto com espera dinâmica e interage com a caixa de diálogo."""
+    def click_photo_attach_button(self):  # <-- CORRIJA A INDENTAÇÃO AQUI
         try:
-            WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div/span[5]/div/ul/div/div/div[2]/li/div"))
-            ).click()
-            print("Botão de anexar foto clicado com sucesso.")
-
             # Após clicar, interagir com a caixa de diálogo
             self.handle_file_dialog()
-
+            input_file = self.driver.find_element(
+                By.XPATH, 
+                '//input[@type="file" and @accept="image/*,video/mp4,video/3gpp,video/quicktime"]'
+            )
+            file_path = os.path.abspath("./change-img/output/nova_foto.jpg")
+            input_file.send_keys(file_path)
+            WebDriverWait(self.driver, 15).until(
+                EC.element_to_be_clickable((By.XPATH, '//div[@role="button" and @aria-label="Enviar"]'))
+            ).click()
         except Exception as e:
-            print(f"Erro ao clicar no botão interno de anexar foto: {e}")
+            print(f"Erro no upload: {e}")
+            traceback.print_exc()
 
-    def handle_file_dialog(self):
-
-        #chamo um bash externo que vai mudar a foto de input para output (change image antigo)
-        #ps atenção para a permissão do arquivo chmod 777
+    def handle_file_dialog(self):  # <-- CORRIJA A INDENTAÇÃO AQUI
         try:
-            # Caminho para o script Bash
             bash_script_path = "./change-img/change-image.sh"
-
-            # Executa o script Bash
             subprocess.Popen(['bash', bash_script_path])
-
-            print("Script Bash chamado com sucesso.")
         except Exception as e:
             print(f"Erro ao chamar o script Bash: {e}")
 
-
-
-        """Interage com a caixa de diálogo do sistema para selecionar o arquivo."""
-        try:
-            # Caminho para o arquivo
-            file_path = "/home/xan/Documents/alchemist/modo-mago/change-img/output"
-
-            # Automação da interação com a caixa de diálogo
-            
-            time.sleep(1)  # Pequeno atraso para a caixa aparecer
-            pyautogui.write(file_path)  # Digita o caminho do arquivo
-
-            pyautogui.press("control + a")  # seleciona tudo de dentro da pasta
-                
-
-            pyautogui.press("enter")  # Confirma a seleção com Enter
-            print("Arquivo enviado com sucesso.")
-
-            # Espera que o anexo seja processado
-            WebDriverWait(self.driver, 45).until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div/div[3]/div/div[2]/div[2]/span/div/div/div/div[2]/div/div[2]/div[2]/div/div"))
-            ).click()
-            print("Prontos pra chegar a algum lugar!")
-        except Exception as e:
-            print(f"Erro ao interagir com a caixa de diálogo: {e}")
-
-
-   
+ 
     def execute_function_prompt(self, function):
         """
         Pergunta ao usuário se deseja executar a função passada como argumento.
@@ -431,19 +437,26 @@ def main():
 
     # Configuração do driver
     options = uc.ChromeOptions()
+        
     userdir = '/home/xan/Documents/sessions-selenium/one'
     options.add_argument(f"--user-data-dir={userdir}")
+    # options.add_argument("--headless=new")  # Modo headless moderno (Chrome 112+)
+    # options.add_argument("--no-sandbox")
+    # options.add_argument("--disable-dev-shm-usage")
+    # options.add_argument("--disable-gpu")
+    # options.add_argument("--window-size=1920,1080")  # Resolução fixa
+    # options.add_argument("--disable-blink-features=AutomationControlled")  # Oculta automação
+
+    # Adicione um user-agent realista
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+
     driver = uc.Chrome(options=options)
-
-
-
+    
+    
     WC = WhatsCliker(driver)
-
-
     WC.acessar_whatsapp()
 
-
-    
+  
     # Perguntar ao usuário se deseja executar scroll_and_capture
     WC.execute_function_prompt(WC.scroll_and_capture)
     # Perguntar ao usuário se deseja exportar chats capturados para txt

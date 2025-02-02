@@ -391,7 +391,7 @@ class WhatsCliker:
             )
             file_path = os.path.abspath("./change-img/output/nova_foto.jpg")
             input_file.send_keys(file_path)
-            WebDriverWait(self.driver, 15).until(
+            WebDriverWait(self.driver, 45).until(
                 EC.element_to_be_clickable((By.XPATH, '//div[@role="button" and @aria-label="Enviar"]'))
             ).click()
         except Exception as e:

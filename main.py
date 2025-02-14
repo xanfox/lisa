@@ -29,7 +29,7 @@ class WhatsCliker:
         self.driver.get("https://web.whatsapp.com")
         print("Aguarde enquanto verificamos se a sessão foi carregada...")
         try:
-            WebDriverWait(self.driver, 300).until(
+            WebDriverWait(self.driver, 600).until(
                 EC.presence_of_element_located((By.ID, "pane-side"))
             )
             print("Login realizado com sucesso e sessão carregada!")

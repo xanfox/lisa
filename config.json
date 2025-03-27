@@ -1,5 +1,9 @@
 {
     "user_data_dir": "/home/xan/Documents/sessions-selenium/one",
+    "copy_text_folder": "iptv",
+    "change_img_folder": "change-img/iptv",
+    "captured_chats_file": "iptv_camp.txt",
+
     "scroll_increment": 300,
     "sleep_time": 0.5,
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -9,7 +13,6 @@
     "execute_save_chats_to_file": 0,
     "execute_filter_chats": 0,
     "monitor_user_data_dir": true,
-    "user_data_dir_size_threshold_gb": 2,
-    "copy_text_folder": "iptv",
-    "change_img_folder": "change-img/iptv"
+    "user_data_dir_size_threshold_gb": 2
+
 }

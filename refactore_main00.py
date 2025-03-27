@@ -1,3 +1,4 @@
+
 import os
 import random
 import time
@@ -30,7 +31,8 @@ DEFAULT_CONFIG = {
     "monitor_user_data_dir": True,
     "user_data_dir_size_threshold_gb": 2,
     "copy_text_folder": "",
-    "change_img_folder": "change-img"
+    "change_img_folder": "change-img",
+    "captured_chats_file": "captured_chats.txt"  # Novo parâmetro para salvar o arquivo de chats
 }
 
 CONFIG_FILE = "config.json"
@@ -122,8 +124,6 @@ def setup_config():
 
     # --- Escolha da pasta de imagens (subpasta dentro de change-img) ---
     change_img_dir = "change-img"
-
-
     if os.path.exists(change_img_dir) and os.path.isdir(change_img_dir):
         subdirs = [d for d in os.listdir(change_img_dir) if os.path.isdir(os.path.join(change_img_dir, d))]
         if subdirs:
@@ -149,13 +149,18 @@ def setup_config():
     else:
         print("A pasta 'change-img' não existe.")
 
+    # --- Nova configuração para o arquivo de chats capturados ---
+    new_value = input(f"captured_chats_file [{config.get('captured_chats_file', 'captured_chats.txt')}]: ").strip()
+    if new_value:
+        config["captured_chats_file"] = new_value
+
     save_config(config)
     return config
 
 def read_single_key(timeout=10):
     """
     Lê uma única tecla do usuário com timeout.
-    Retorna a tecla pressionada ou None se nenhum tecla for pressionada dentro do timeout.
+    Retorna a tecla pressionada ou None se nenhuma tecla for pressionada dentro do timeout.
     """
     import sys
     if os.name == 'nt':
@@ -255,14 +260,13 @@ class WhatsCliker:
           - scroll_increment: incremento do scroll no painel de chats
           - sleep_time: tempo de espera entre as ações
           - copy_text_folder: nome da subpasta (dentro de "./copys") de onde os arquivos de texto serão lidos.
-          - config: dicionário de configurações (para acessar a pasta de imagens, por exemplo)
+          - config: dicionário de configurações (para acessar a pasta de imagens, etc.)
         """
         self.driver = driver
         self.scroll_increment = scroll_increment
         self.sleep_time = sleep_time
         self.config = config or {}
         self.captured_chats = set()  # Chats capturados durante o scroll
-        # Define a pasta dos textos: se copy_text_folder estiver configurado, usa "./copys/<copy_text_folder>"
         self.folder_path = os.path.join("./copys", copy_text_folder) if copy_text_folder else "./copys"
         self.retrieved_chats_from_file = set()  # Chats carregados de arquivo
 
@@ -357,10 +361,7 @@ class WhatsCliker:
             return
 
         if not filename:
-            filename = input("Digite o nome do arquivo para salvar os chats (padrão: captured_chats.txt): ").strip()
-            if not filename:
-                filename = "captured_chats.txt"
-
+            filename = self.config.get("captured_chats_file", "captured_chats.txt")
         try:
             with open(filename, "w", encoding="utf-8") as file:
                 for chat in sorted(self.captured_chats):
@@ -405,35 +406,29 @@ class WhatsCliker:
             print(f"Erro ao processar exclusões: {e}")
 
     def scroll_and_find(self, target_chats, exclusion_zone):
-        """
-        Percorre o painel de chats procurando os chats em 'target_chats'
-        (ignorando os de 'exclusion_zone'). Para cada chat encontrado, realiza:
-          - Clique no chat
-          - Limpeza da conversa
-          - Envio de mensagem
-          - Anexação e envio de imagem
-        """
         try:
             pane_side = self.driver.find_element(By.ID, "pane-side")
         except Exception as e:
             print(f"Erro ao localizar o painel de chats: {e}")
-            return set()
+            return set()  
 
         found_chats = set()
-        max_iterations = 555
-        iteration = 0
+        previous_count = 0
 
-        while (target_chats - found_chats - exclusion_zone) and (iteration < max_iterations):
-            iteration += 1
-            remaining = len(target_chats - found_chats - exclusion_zone)
-            print(f"\nIteração {iteration} - Restam {remaining} chats para processar.")
-
+        # Loop até que não sejam encontrados novos chats
+        while (target_chats - found_chats - exclusion_zone):
+            print(f"\nChats restantes para processar: {len(target_chats - found_chats - exclusion_zone)}")
+            
             self._process_visible_chats(pane_side, target_chats, found_chats, exclusion_zone)
-
-            if not self._scroll_down(pane_side):
-                print("Não foi possível rolar mais. Encerrando busca.")
-                break
-
+            
+            # Se o número de chats encontrados não aumentar, tenta fazer scroll e verifica novamente
+            if len(found_chats) == previous_count:
+                if not self._scroll_down(pane_side):
+                    print("Não foi possível rolar mais. Encerrando busca.")
+                    break
+            else:
+                previous_count = len(found_chats)
+        
         self._scroll_to_top(pane_side)
 
         print("\nProcesso de busca finalizado.")
@@ -462,19 +457,32 @@ class WhatsCliker:
                 continue
 
     def _process_chat(self, chat, title):
-        """
-        Processa um chat individual:
-          - Clica no chat
-          - Limpa a conversa
-          - Envia mensagem e anexa imagem
-          - Aguarda um tempo aleatório
-        """
         try:
             print(f"Processando chat: {title}")
-            chat_to_click = self.driver.find_element(By.XPATH, f'//*[@title="{title}"]')
-            chat_to_click.click()
+            xpath = f'//*[@title="{title}"]'
+            chat_to_click = None
+            retries = 3
+            for attempt in range(retries):
+                try:
+                    chat_to_click = WebDriverWait(self.driver, 45).until(
+                        EC.element_to_be_clickable((By.XPATH, xpath))
+                    )
+                    break
+                except Exception as e:
+                    print(f"Tentativa {attempt+1}: erro ao localizar o elemento: {e}")
+                    time.sleep(1)
+            if chat_to_click is None:
+                raise Exception("Não foi possível localizar o elemento clicável.")
+            
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", chat_to_click)
+            time.sleep(0.5)
+            try:
+                chat_to_click.click()
+            except Exception as click_error:
+                print(f"Click interceptado, tentando via JavaScript: {click_error}")
+                self.driver.execute_script("arguments[0].click();", chat_to_click)
+            
             time.sleep(1)
-
             self._clear_chat()
             self._send_random_message()
             self.click_attach_button()
@@ -483,15 +491,11 @@ class WhatsCliker:
             delay = random.uniform(9, 35)
             print(f"Aguardando {delay:.2f} segundos antes do próximo chat.")
             time.sleep(delay)
-
             self.driver.execute_script("arguments[0].scrollIntoView(true);", chat)
         except Exception as e:
             print(f"Erro ao processar o chat '{title}': {e}")
 
     def _scroll_down(self, pane_side):
-        """
-        Realiza o scroll para baixo no painel e retorna True se a posição mudar.
-        """
         previous_scroll = self.driver.execute_script("return arguments[0].scrollTop;", pane_side)
         self.driver.execute_script("arguments[0].scrollTop += arguments[1];", pane_side, self.scroll_increment)
         time.sleep(self.sleep_time)
@@ -499,20 +503,11 @@ class WhatsCliker:
         return current_scroll != previous_scroll
 
     def _scroll_to_top(self, pane_side):
-        """
-        Rola o painel de chats até o topo.
-        """
         while self.driver.execute_script("return arguments[0].scrollTop;", pane_side) > 0:
             self.driver.execute_script("arguments[0].scrollTop -= arguments[1];", pane_side, self.scroll_increment)
             time.sleep(self.sleep_time)
 
     def _clear_chat(self):
-        """
-        Realiza a sequência para limpar a conversa:
-          1. Clica em "Mais opções"
-          2. Seleciona "Limpar conversa"
-          3. Confirma a limpeza
-        """
         try:
             WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable(
@@ -546,10 +541,6 @@ class WhatsCliker:
         time.sleep(3)
 
     def _send_random_message(self):
-        """
-        Seleciona um arquivo .txt aleatório, copia seu conteúdo para a área de transferência
-        e cola na caixa de mensagem.
-        """
         try:
             random_file = self._get_random_txt_file()
             file_path = os.path.join(self.folder_path, random_file)
@@ -571,9 +562,6 @@ class WhatsCliker:
             print(f"Erro ao enviar a mensagem: {e}")
 
     def _get_random_txt_file(self):
-        """
-        Retorna o nome de um arquivo .txt aleatório da pasta folder_path.
-        """
         if not os.path.exists(self.folder_path):
             raise FileNotFoundError(f"Pasta '{self.folder_path}' não encontrada.")
         txt_files = [f for f in os.listdir(self.folder_path) if f.endswith(".txt")]
@@ -582,9 +570,6 @@ class WhatsCliker:
         return random.choice(txt_files)
 
     def click_attach_button(self):
-        """
-        Clica no botão de anexar arquivos no WhatsApp Web.
-        """
         try:
             WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable(
@@ -596,12 +581,6 @@ class WhatsCliker:
             print(f"Erro ao clicar no botão de anexar: {e}")
 
     def click_photo_attach_button(self):
-        """
-        Realiza o upload de uma imagem:
-          - Seleciona uma imagem aleatória da pasta configurada
-          - Envia o arquivo de imagem
-          - Clica para enviar a imagem
-        """
         try:
             image_path = self.handle_file_dialog()
             if image_path is None:
@@ -623,10 +602,6 @@ class WhatsCliker:
             traceback.print_exc()
 
     def handle_file_dialog(self):
-        """
-        Seleciona uma imagem aleatória da pasta configurada para imagens.
-        Em vez de chamar um script externo, faz tudo em Python.
-        """
         try:
             image_path = self.get_random_image_path()
             print(f"Imagem selecionada: {image_path}")
@@ -636,17 +611,11 @@ class WhatsCliker:
             return None
 
     def get_random_image_path(self):
-        """
-        Procura, na pasta configurada em 'change_img_folder', uma subpasta aleatória (se houver)
-        e, dentro dela, seleciona uma imagem aleatória com extensão .jpg, .jpeg, .png ou .gif.
-        """
         change_img_folder = self.config.get("change_img_folder", "change-img")
         if not os.path.exists(change_img_folder):
             raise FileNotFoundError(f"Pasta de imagens '{change_img_folder}' não encontrada.")
-        # Lista subpastas; se existirem, escolhe uma aleatoriamente; caso contrário, usa a própria pasta
         subdirs = [d for d in os.listdir(change_img_folder) if os.path.isdir(os.path.join(change_img_folder, d))]
         chosen_folder = os.path.join(change_img_folder, random.choice(subdirs)) if subdirs else change_img_folder
-        # Extensões permitidas
         allowed_exts = [".jpg", ".jpeg", ".png", ".gif"]
         images = [f for f in os.listdir(chosen_folder) if os.path.splitext(f)[1].lower() in allowed_exts]
         if not images:
@@ -655,11 +624,6 @@ class WhatsCliker:
         return os.path.abspath(chosen_image)
 
     def execute_function_prompt(self, function):
-        """
-        Pergunta ao usuário se deseja executar a função especificada.
-        (Esta função ainda pode ser utilizada, mas os comandos serão chamados
-         diretamente a partir do main conforme as configurações.)
-        """
         func_name = function.__name__ if hasattr(function, '__name__') else str(function)
         resposta = input(f"Deseja executar {func_name}? [y/s para sim, Enter para não]: ").strip().lower()
         if resposta in ["y", "s"]:
@@ -673,26 +637,18 @@ class WhatsCliker:
 # ====================================================
 
 def main():
-    # Exibe o prompt inicial e obtém a escolha do usuário
     choice = get_startup_choice(timeout=10)
     if choice == 'setup':
         config = setup_config()
     else:
         config = load_config()
 
-    # Monitora o tamanho da pasta de sessão, se configurado
     monitor_user_data_dir(config)
-
     start_time = time.time()
-
-    # Configura o driver usando as configurações
     options = uc.ChromeOptions()
     options.add_argument(f"--user-data-dir={config['user_data_dir']}")
     options.add_argument(f"--user-agent={config['user_agent']}")
-
     driver = uc.Chrome(options=options)
-
-    # Instancia a classe de automação, passando também a pasta de textos e o config
     wc = WhatsCliker(
         driver,
         scroll_increment=config["scroll_increment"],
@@ -701,37 +657,27 @@ def main():
         config=config
     )
     wc.acessar_whatsapp()
-
-    # Verifica as flags de execução definidas no arquivo de configuração
     if config.get("execute_scroll_and_capture", True):
         wc.scroll_and_capture()
     else:
         print("scroll_and_capture não será executado conforme a configuração.")
-
     if config.get("execute_save_chats_to_file", True):
         wc.save_chats_to_file()
     else:
         print("save_chats_to_file não será executado conforme a configuração.")
-
-    # Carrega os chats salvos previamente
     chats = wc.load_chats_from_file()
-
     if config.get("execute_filter_chats", True):
         wc.filter_chats_to_exclusion_file(chats)
     else:
         print("filter_chats (exclusão) não será executado conforme a configuração.")
-
     exclusion_chats = wc.load_chats_from_file("exclusion_file.txt")
     wc.scroll_and_find(chats, exclusion_chats)
-
     elapsed_time = (time.time() - start_time) / 60
     print(f"Tempo total de execução: {elapsed_time:.2f} minutos")
-
     exit_delay = config.get("exit_delay", 15)
     time_to_sleep = input(f"Insira o tempo de espera (em segundos) antes de encerrar (padrão {exit_delay}): ") or exit_delay
     print(f"Aguardando {time_to_sleep} segundos antes de encerrar...")
     time.sleep(int(time_to_sleep))
-
     driver.quit()
 
 if __name__ == "__main__":
